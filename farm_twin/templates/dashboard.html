@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Adaptive Digital Twin{% endblock %}
+
+{% block content %}
+<h1>Farm Dashboard</h1>
+<p class="subtitle">Get a yield forecast and irrigation recommendation for your farm, using real regional crop data and live weather — no field sensors required.</p>
+
+{% if not model_ready %}
+<div class="notice warn">
+  The yield-prediction model hasn't been trained yet. Run <code>process_data.py</code>, then
+  <code>build_training_dataset.py</code>, then <code>train_model.py</code> before using this dashboard.
+</div>
+{% endif %}
+
+<section class="card">
+  <h2>Farm Profile</h2>
+  <form id="farm-form" class="form-grid">
+    <label>
+      State
+      <select id="state-select" required>
+        <option value="" disabled selected>Select a state</option>
+        {% for s in states %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>
+      Crop
+      <select id="crop-select" required disabled>
+        <option value="" disabled selected>Select a state first</option>
+      </select>
+    </label>
+    <label>
+      Farm Area (hectares)
+      <input type="number" id="area-input" min="0.1" step="0.1" value="2" required>
+    </label>
+    <button type="submit" id="predict-btn" {% if not model_ready %}disabled{% endif %}>Get Forecast</button>
+  </form>
+
+  <div class="location-search-box">
+    <label for="location-input">
+      Exact farm location (optional, recommended)
+      <span class="muted">— type your village/town instead of relying on the state capital's weather</span>
+    </label>
+    <div style="position:relative;">
+      <input type="text" id="location-input" placeholder="e.g. Masaurhi, Bihar" autocomplete="off">
+      <div id="location-results" class="location-results" style="display:none;"></div>
+    </div>
+    <div id="location-selected" class="notice good" style="display:none;"></div>
+  </div>
+
+  <div id="form-error" class="notice danger" style="display:none;"></div>
+</section>
+
+<div id="results" style="display:none;">
+  <div id="location-used-note" class="notice good" style="margin-bottom:16px;"></div>
+  <section class="card-row">
+    <div class="card stat-card">
+      <span class="stat-label">Predicted Yield</span>
+      <span class="stat-value" id="predicted-yield">—</span>
+      <span class="stat-unit">kg / hectare</span>
+    </div>
+    <div class="card stat-card">
+      <span class="stat-label">Regional Historical Average</span>
+      <span class="stat-value" id="historical-yield">—</span>
+      <span class="stat-unit">kg / hectare</span>
+    </div>
+    <div class="card stat-card">
+      <span class="stat-label">Current Temperature</span>
+      <span class="stat-value" id="current-temp">—</span>
+      <span class="stat-unit">°C</span>
+    </div>
+    <div class="card stat-card">
+      <span class="stat-label">Current Humidity</span>
+      <span class="stat-value" id="current-humidity">—</span>
+      <span class="stat-unit">%</span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Recommendations</h2>
+    <ul id="recommendation-list" class="recommendation-list"></ul>
+  </section>
+
+  <section class="card">
+    <h2>Historical Yield Trend (real regional data)</h2>
+    <div id="trend-chart"></div>
+  </section>
+
+  <div class="notice good">
+    Want to see the live simulated farm state behind this forecast? Check the
+    <a href="{{ url_for('twin_page') }}">Digital Twin</a> section.
+  </div>
+</div>
+
+<script>
+  const cropsByState = {{ crops_by_state | tojson }};
+</script>
+<script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,35 @@
+version: "3.8"
+
+# Lightweight FIWARE integration for the Adaptive Digital Twin.
+# Only Orion + MongoDB are needed here — unlike a sensor-based setup, this
+# Flask app computes the twin's state itself (from weather + simulation),
+# so it can push directly into Orion as the digital twin's live context
+# store, without an IoT Agent translating device messages.
+#
+# Start:  docker-compose up -d
+# Stop:   docker-compose down
+
+services:
+  mongo-db:
+    image: mongo:6.0
+    container_name: farmtwin-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh --quiet
+      interval: 10s
+      retries: 5
+
+  orion:
+    image: fiware/orion:3.10.1
+    container_name: farmtwin-orion
+    depends_on:
+      - mongo-db
+    ports:
+      - "1026:1026"
+    command: -dbhost mongo-db -logLevel INFO
+
+volumes:
+  mongo-data:

@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Digital Twin — Adaptive Digital Twin{% endblock %}
+
+{% block content %}
+<h1>Digital Twin</h1>
+<p class="subtitle">The live simulated state of your farm — continuously updated from real weather data, not a static snapshot.</p>
+<div id="fiware-badge" class="notice good" style="display:none;"></div>
+
+<div id="no-data" class="notice warn">
+  No farm profile yet. Go to the <a href="{{ url_for('dashboard') }}">Dashboard</a> and get a forecast first —
+  the twin's state is built from that.
+</div>
+
+<div id="twin-content" style="display:none;">
+  <section class="card-row">
+    <div class="card status-card" id="status-card">
+      <span class="stat-label">Twin Status</span>
+      <span class="stat-value" id="twin-status">—</span>
+      <span class="stat-unit" id="twin-updated"></span>
+    </div>
+    <div class="card stat-card">
+      <span class="stat-label">Soil Water Balance</span>
+      <span class="stat-value" id="soil-water">—</span>
+      <span class="stat-unit">mm of 150 mm capacity</span>
+    </div>
+    <div class="card stat-card">
+      <span class="stat-label">Consecutive Dry Days</span>
+      <span class="stat-value" id="dry-days">—</span>
+      <span class="stat-unit">days</span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>📍 Real Satellite View of Your Farm Location</h2>
+    <div id="satellite-panel">
+      <div id="satellite-wrap" class="satellite-wrap">
+        <div id="satellite-grid" class="satellite-grid"></div>
+        <div class="scan-line"></div>
+        <div class="hud-corner hud-corner-tl"></div>
+        <div class="hud-corner hud-corner-tr"></div>
+        <div class="hud-corner hud-corner-bl"></div>
+        <div class="hud-corner hud-corner-br"></div>
+        <div id="hud-readout" class="hud-readout"></div>
+      </div>
+      <p class="muted" id="satellite-caption"></p>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Field Visualization (3D)</h2>
+    <div id="live-condition-label" class="notice good" style="margin-bottom:12px;"></div>
+    <div id="twin-3d-wrap" style="position:relative;">
+      <div id="twin-3d-container" style="width:100%; height:560px; border-radius:14px; overflow:hidden; background:#F6FAF6;"></div>
+      <div id="plant-popup" class="plant-popup" style="display:none;"></div>
+    </div>
+    <p class="muted">The farm is drawn at a scale that follows the area you entered on the Dashboard (1 ha = 100 × 100 m), as three field plots with irrigation, a reservoir, paths and surrounding countryside. Use the mouse wheel to zoom from the whole farm down to individual crop plants, or the <strong>Aerial / Field / Crop</strong> buttons. <strong>Click anywhere on a field</strong> to read its simulated soil water. Colour across the field shows <strong>modelled</strong> spatial variation around the twin's computed value, not individual sensor readings.</p>
+
+    <div class="whatif-box">
+      <div class="whatif-label"><span>🌦️ Simulate a weather event</span></div>
+      <div class="preset-row">
+        <button class="preset-btn active" data-preset="clear">☀️ Clear</button>
+        <button class="preset-btn" data-preset="cloudy">☁️ Cloudy</button>
+        <button class="preset-btn" data-preset="rain">🌧️ Heavy Rain</button>
+        <button class="preset-btn" data-preset="storm">🌬️ Windstorm</button>
+        <button class="preset-btn" data-preset="heat">🔥 Heatwave</button>
+      </div>
+
+      <div class="whatif-label" style="margin-top:16px;">
+        <span>Fine-tune rainfall</span>
+        <strong id="whatif-value">+0 mm</strong>
+      </div>
+      <input type="range" id="rainfall-slider" min="-60" max="60" value="0" step="5">
+      <p class="muted">Presets set the scene instantly; drag the slider for finer control. Everything here is a live preview — it doesn't affect your real forecast.</p>
+      <button id="reset-whatif" class="ghost-btn">Reset to real data</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Soil Water Balance</h2>
+    <div class="water-bar-track">
+      <div class="water-bar-fill" id="water-bar-fill"></div>
+    </div>
+    <p class="muted">This bar shows the root-zone water balance simulated by the twin — it rises with rainfall and falls with evapotranspiration each day. This is a physically-modeled estimate, not a sensor reading.</p>
+  </section>
+
+  <section class="card">
+    <h2>Recent Weather (last 14 days, real data)</h2>
+    <div id="weather-chart"></div>
+  </section>
+
+  <section class="card">
+    <h2>Simulated Soil Water Trend</h2>
+    <div id="water-chart"></div>
+  </section>
+
+  <section class="card">
+    <h2>Seasonal Yield Trajectory (day-by-day)</h2>
+    <div id="yield-trajectory-chart"></div>
+    <p class="muted">Real crop yield is only measured once per harvest — day-by-day or month-by-month yield records don't exist in agricultural data. What this chart honestly shows instead: how the yield forecast would shift day-to-day based on drought/heat stress accumulated so far this season. It's a live projection, not a fabricated historical record.</p>
+  </section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='geo.css') }}">
+<script src="{{ url_for('static', filename='landscape.js') }}"></script>
+<script src="{{ url_for('static', filename='twin.js') }}"></script>
+<script src="{{ url_for('static', filename='geo.js') }}"></script>
+{% endblock %}
