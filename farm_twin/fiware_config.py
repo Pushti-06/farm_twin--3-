@@ -4,7 +4,7 @@ FIWARE configuration for the Adaptive Digital Twin.
 Entity model
 ------------
 Type:  FarmTwin
-ID:    urn:ngsi-ld:FarmTwin:<State>:<Crop>   (spaces replaced with underscores)
+ID:    urn:ngsi-ld:FarmTwin:<District>:<Crop>   (spaces replaced with underscores)
 Attrs: soilWaterMm, soilWaterFillPct, consecutiveDryDays, droughtRisk,
        heatStress, status, predictedYield, updatedAt
 
@@ -35,6 +35,7 @@ WRITE_HEADERS = {
 REQUEST_TIMEOUT = 1.5  # short timeout so the app falls back fast if Orion is down
 
 
-def entity_id_for(state, crop):
-    safe_state = state.replace(" ", "_")
-    return f"urn:ngsi-ld:FarmTwin:{safe_state}:{crop}"
+def entity_id_for(district, crop):
+    safe_district = district.replace(" ", "_")
+    safe_crop = crop.replace(" ", "_").replace("/", "_")
+    return f"urn:ngsi-ld:FarmTwin:{safe_district}:{safe_crop}"

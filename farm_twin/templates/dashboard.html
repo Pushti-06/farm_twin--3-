@@ -3,7 +3,7 @@
 
 {% block content %}
 <h1>Farm Dashboard</h1>
-<p class="subtitle">Get a yield forecast and irrigation recommendation for your farm, using real regional crop data and live weather — no field sensors required.</p>
+<p class="subtitle">Get a yield forecast and irrigation recommendation for your farm, using real Tamil Nadu district crop data and live weather — no field sensors required.</p>
 
 {% if not model_ready %}
 <div class="notice warn">
@@ -16,16 +16,16 @@
   <h2>Farm Profile</h2>
   <form id="farm-form" class="form-grid">
     <label>
-      State
-      <select id="state-select" required>
-        <option value="" disabled selected>Select a state</option>
-        {% for s in states %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+      District
+      <select id="district-select" required>
+        <option value="" disabled selected>Select a district</option>
+        {% for value, label in districts %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
       </select>
     </label>
     <label>
       Crop
       <select id="crop-select" required disabled>
-        <option value="" disabled selected>Select a state first</option>
+        <option value="" disabled selected>Select a district first</option>
       </select>
     </label>
     <label>
@@ -38,10 +38,10 @@
   <div class="location-search-box">
     <label for="location-input">
       Exact farm location (optional, recommended)
-      <span class="muted">— type your village/town instead of relying on the state capital's weather</span>
+      <span class="muted">— type your village/town instead of relying on the district headquarters' weather</span>
     </label>
     <div style="position:relative;">
-      <input type="text" id="location-input" placeholder="e.g. Masaurhi, Bihar" autocomplete="off">
+      <input type="text" id="location-input" placeholder="e.g. Pollachi, Coimbatore" autocomplete="off">
       <div id="location-results" class="location-results" style="display:none;"></div>
     </div>
     <div id="location-selected" class="notice good" style="display:none;"></div>
@@ -59,7 +59,7 @@
       <span class="stat-unit">kg / hectare</span>
     </div>
     <div class="card stat-card">
-      <span class="stat-label">Regional Historical Average</span>
+      <span class="stat-label">District Historical Average</span>
       <span class="stat-value" id="historical-yield">—</span>
       <span class="stat-unit">kg / hectare</span>
     </div>
@@ -81,8 +81,23 @@
   </section>
 
   <section class="card">
-    <h2>Historical Yield Trend (real regional data)</h2>
+    <h2>Historical Yield Trend (real district data, 1997–2019)</h2>
     <div id="trend-chart"></div>
+  </section>
+
+  <section class="card">
+    <h2>How the Forecast Changed — Last 12 Months</h2>
+    <div id="prediction-history-chart"></div>
+    <p class="muted">Each point is the model's yield forecast as it would have stood at the end of that month, using the
+    previous 365 days of real weather up to that date. Crop, district and model are unchanged — only the weather moves,
+    so this shows how sensitive the forecast is to recent conditions. It is a recomputation, not a log of past requests.</p>
+  </section>
+
+  <section class="card">
+    <h2>Month-by-Month Weather — Last 12 Months</h2>
+    <div id="monthly-chart"></div>
+    <p class="muted">Real daily weather for this location (NASA POWER), summed or averaged per month. Crop yield itself
+    is only recorded once per harvest season, so the yield trend above stays yearly.</p>
   </section>
 
   <div class="notice good">
@@ -92,7 +107,7 @@
 </div>
 
 <script>
-  const cropsByState = {{ crops_by_state | tojson }};
+  const cropsByDistrict = {{ crops_by_district | tojson }};
 </script>
 <script src="{{ url_for('static', filename='dashboard.js') }}"></script>
 {% endblock %}

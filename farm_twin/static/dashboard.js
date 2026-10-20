@@ -1,4 +1,4 @@
-const stateSelect = document.getElementById("state-select");
+const districtSelect = document.getElementById("district-select");
 const cropSelect = document.getElementById("crop-select");
 const form = document.getElementById("farm-form");
 const errorBox = document.getElementById("form-error");
@@ -10,13 +10,13 @@ const locationSelected = document.getElementById("location-selected");
 let selectedLocation = null; // { name, admin1, country, latitude, longitude }
 let searchDebounce = null;
 
-stateSelect.addEventListener("change", () => {
-  const crops = cropsByState[stateSelect.value] || [];
+districtSelect.addEventListener("change", () => {
+  const crops = cropsByDistrict[districtSelect.value] || [];
   cropSelect.innerHTML = "";
   crops.forEach((c) => {
     const opt = document.createElement("option");
     opt.value = c;
-    opt.textContent = c.charAt(0) + c.slice(1).toLowerCase();
+    opt.textContent = c.charAt(0) + c.slice(1).toLowerCase();  // "DRY CHILLIES" -> "Dry chillies"
     cropSelect.appendChild(opt);
   });
   cropSelect.disabled = crops.length === 0;
@@ -57,7 +57,7 @@ function renderLocationResults(matches) {
       locationInput.value = `${m.name}, ${m.admin1 || m.country}`;
       locationResults.style.display = "none";
       locationSelected.style.display = "block";
-      locationSelected.textContent = `✓ Using exact coordinates for ${m.name} (${m.latitude.toFixed(4)}, ${m.longitude.toFixed(4)}) — not the state capital.`;
+      locationSelected.textContent = `✓ Using exact coordinates for ${m.name} (${m.latitude.toFixed(4)}, ${m.longitude.toFixed(4)}) — not the district headquarters.`;
     });
     locationResults.appendChild(item);
   });
@@ -78,7 +78,7 @@ form.addEventListener("submit", async (e) => {
   btn.textContent = "Fetching live weather...";
 
   const payload = {
-    state: stateSelect.value,
+    district: districtSelect.value,
     crop: cropSelect.value,
     area: parseFloat(document.getElementById("area-input").value),
   };
@@ -115,7 +115,7 @@ function renderResults(data) {
     locNote.textContent = `📍 Weather fetched for your exact farm location: ${data.location_label} (${data.farm_lat.toFixed(4)}, ${data.farm_lon.toFixed(4)})`;
   } else {
     locNote.className = "notice warn";
-    locNote.textContent = `⚠ Using ${data.state}'s state-capital coordinates as an approximation — enter your exact village/town above for hyper-local accuracy.`;
+    locNote.textContent = `⚠ Using the ${data.location_label} coordinates as an approximation — enter your exact village/town above for hyper-local accuracy.`;
   }
 
   document.getElementById("predicted-yield").textContent = data.recommendation.predicted_yield_kg_per_ha.toLocaleString();
@@ -146,6 +146,46 @@ function renderResults(data) {
     height: 280,
     yaxis: { title: "Yield (kg/ha)" },
     xaxis: { title: "Year", dtick: 1 },
+    paper_bgcolor: "white",
+    plot_bgcolor: "white",
+  }, { displayModeBar: false, responsive: true });
+
+  const ph = data.prediction_history || [];
+  const monthLabel = (ym) => {
+    const [y, mo] = ym.split("-");
+    return new Date(+y, +mo - 1).toLocaleString("en", { month: "short" }) + " " + y.slice(2);
+  };
+  const phX = ph.map((p) => monthLabel(p.month));
+  const histAvg = data.recommendation.historical_avg_yield_kg_per_ha;
+  Plotly.newPlot("prediction-history-chart", [
+    { x: phX, y: ph.map((p) => p.predicted), type: "scatter", mode: "lines+markers", name: "Forecast at month-end",
+      line: { color: "#2F8F5B", width: 3 }, marker: { size: 7 } },
+    ...(histAvg ? [{ x: phX, y: phX.map(() => histAvg), type: "scatter", mode: "lines", name: "District historical average",
+      line: { color: "#999", width: 2, dash: "dash" } }] : []),
+  ], {
+    margin: { t: 10, r: 20, l: 60, b: 60 },
+    height: 300,
+    yaxis: { title: "Predicted yield (kg/ha)" },
+    legend: { orientation: "h", y: -0.25 },
+    paper_bgcolor: "white",
+    plot_bgcolor: "white",
+  }, { displayModeBar: false, responsive: true });
+
+  const mw = data.monthly_weather || [];
+  const labels = mw.map((m) => {
+    const [y, mo] = m.month.split("-");
+    return new Date(+y, +mo - 1).toLocaleString("en", { month: "short" }) + " " + y.slice(2);
+  });
+  Plotly.newPlot("monthly-chart", [
+    { x: labels, y: mw.map((m) => m.rainfall), type: "bar", name: "Rainfall (mm)", marker: { color: "#5B9BD5" } },
+    { x: labels, y: mw.map((m) => m.et0), type: "scatter", mode: "lines+markers", name: "Evapotranspiration (mm)", line: { color: "#E0A030", width: 2 } },
+    { x: labels, y: mw.map((m) => m.avg_temp), type: "scatter", mode: "lines+markers", name: "Avg temperature (°C)", yaxis: "y2", line: { color: "#D9534F", width: 2 } },
+  ], {
+    margin: { t: 10, r: 50, l: 50, b: 60 },
+    height: 320,
+    yaxis: { title: "mm per month" },
+    yaxis2: { title: "°C", overlaying: "y", side: "right", showgrid: false },
+    legend: { orientation: "h", y: -0.25 },
     paper_bgcolor: "white",
     plot_bgcolor: "white",
   }, { displayModeBar: false, responsive: true });

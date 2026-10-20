@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Geographic navigation layer: INDIA -> TAMIL NADU -> CHENNAI -> FARM -> 3D TWIN
+// Geographic navigation layer: TAMIL NADU -> DISTRICT -> FARM -> 3D TWIN
 //
 // Purely a visual/spatial layer on top of the existing twin page. It reads the
 // same /api/twin-state the page already uses and never writes to the backend.
@@ -11,21 +11,10 @@
   if (typeof THREE === "undefined") return;
 
   // ---- simplified geography (lon, lat) -------------------------------------
-  const INDIA = [[74.3,37.0],[77.8,35.5],[79.0,34.3],[78.9,32.5],[80.2,30.8],[81.0,30.2],[81.8,30.3],[84.0,28.6],[86.0,27.9],[88.1,27.9],[88.8,27.3],[89.8,26.8],[92.0,26.9],[94.5,27.6],[96.1,28.3],[97.3,28.2],[95.5,26.5],[94.5,25.0],[93.3,23.0],[92.6,21.9],[92.2,24.0],[91.4,23.5],[91.6,24.5],[90.2,25.2],[89.0,26.2],[88.5,25.2],[88.1,24.6],[88.9,22.1],[87.0,21.5],[86.8,20.7],[85.0,19.3],[84.0,18.2],[82.3,16.6],[80.9,15.8],[80.2,13.4],[79.9,11.4],[79.2,10.3],[78.2,8.9],[77.5,8.1],[76.6,8.9],[75.8,11.3],[74.9,12.9],[74.0,15.0],[73.3,17.5],[72.8,19.1],[72.7,21.0],[72.0,21.2],[70.4,20.9],[69.0,22.3],[68.2,23.7],[70.0,24.2],[71.0,24.4],[70.0,25.5],[70.2,27.2],[71.9,27.9],[73.0,29.9],[74.5,31.1],[74.6,32.5],[73.8,34.0]];
   const TAMIL_NADU = [[80.3,13.55],[80.35,13.1],[80.15,12.4],[79.85,11.75],[79.85,10.9],[79.4,10.3],[79.3,9.7],[78.9,9.25],[78.2,8.9],[77.55,8.08],[77.25,8.5],[77.2,9.2],[77.35,9.8],[77.1,10.3],[76.85,10.9],[76.85,11.45],[77.3,11.9],[77.7,12.2],[77.8,12.8],[78.4,13.2],[79.2,13.4],[79.8,13.65]];
-  const STATE_LABELS = [
-    ["PUNJAB", 75.3, 31.0], ["RAJASTHAN", 73.8, 26.6], ["GUJARAT", 71.4, 22.8],
-    ["UTTAR PRADESH", 80.6, 27.0], ["MADHYA PRADESH", 78.0, 23.6], ["BIHAR", 85.7, 25.7],
-    ["WEST BENGAL", 87.9, 23.6], ["ODISHA", 84.6, 20.6], ["MAHARASHTRA", 76.0, 19.6],
-    ["TELANGANA", 79.0, 17.9], ["ANDHRA PRADESH", 79.8, 15.7], ["KARNATAKA", 75.9, 14.6],
-  ];
-  // illustrative agricultural-zone nodes inside Tamil Nadu
-  const DISTRICTS = [
-    { id: "chennai", name: "CHENNAI", lon: 80.27, lat: 13.08 },
-    { id: "coimbatore", name: "COIMBATORE", lon: 76.96, lat: 11.02, stress: 0x3ddc84 },
-    { id: "trichy", name: "TIRUCHIRAPPALLI", lon: 78.70, lat: 10.80, stress: 0xf0b34a },
-    { id: "madurai", name: "MADURAI", lon: 78.12, lat: 9.92, stress: 0xe05a5a },
-  ];
+  // every Tamil Nadu district (name + headquarters), supplied by /api/twin-state
+  let DISTRICTS = [];
+  let farmD = null;               // the district the farm twin lives in
 
   const proj = (lon, lat) => new THREE.Vector3((lon - 80) * 0.92, 0, -(lat - 20));
   const easeInOutCubic = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
@@ -33,22 +22,32 @@
 
   // ---- state ---------------------------------------------------------------
   let DATA = null;
-  let stage = "idle";            // india | tn | chennai | found | init | descend | done
+  let stage = "idle";            // tn | district | found | init | descend | done
   let overlay, renderer, scene, camera, raf = 0, running = false, busy = false;
-  let indiaMesh, tnMesh, tnEdges, indiaEdges, stressGroup, farmGroup, particles;
-  let indiaMat, tnMat, stressMats = [];
+  let tnMesh, tnEdges, stressGroup, farmGroup, particles;
+  let tnMat, stressMats = [];
   const camPos = new THREE.Vector3(), camTarget = new THREE.Vector3();
   const labels = [];
   const clock = new THREE.Clock();
   let skipFlag = false;
 
+  const V = (x, y, z) => new THREE.Vector3(x, y, z);
   const VIEWS = {
-    india:   { pos: new THREE.Vector3(0, 40, 21),    target: new THREE.Vector3(0, 0, -2.5) },
-    tn:      { pos: new THREE.Vector3(-1.1, 9.5, 15.5), target: new THREE.Vector3(-1.1, 0, 8.7) },
-    chennai: { pos: new THREE.Vector3(0.25, 2.7, 8.9), target: new THREE.Vector3(0.25, 0, 6.85) },
-    farm:    { pos: new THREE.Vector3(0.33, 0.16, 7.25), target: new THREE.Vector3(0.33, 0, 6.9) },
+    tn: { pos: V(-0.55, 7.1, 13.7), target: V(-0.55, 0, 8.8) },
+    district: null,   // set per farm district in setFarmDistrict()
+    farm: null,
   };
-  const FARM_POS = proj(80.27, 13.08).add(new THREE.Vector3(0.08, 0, -0.02));
+  const FARM_POS = new THREE.Vector3();
+  const districtName = () => (farmD ? farmD.name.toUpperCase() : "DISTRICT");
+
+  // Frame the camera on whichever district holds the farm.
+  function setFarmDistrict() {
+    farmD = DISTRICTS.find(d => d.id === DATA.district) || DISTRICTS.find(d => d.id === "CHENNAI") || DISTRICTS[0];
+    const cp = proj(farmD.lon, farmD.lat);
+    VIEWS.district = { pos: cp.clone().add(V(0, 2.7, 1.98)), target: cp.clone().add(V(0, 0, -0.07)) };
+    VIEWS.farm = { pos: cp.clone().add(V(0.08, 0.16, 0.33)), target: cp.clone().add(V(0.08, 0, -0.02)) };
+    FARM_POS.copy(cp).add(V(0.08, 0, -0.02));
+  }
 
   // ---- helpers -------------------------------------------------------------
   function shapeFrom(pts) {
@@ -82,16 +81,14 @@
   }
   function setStage(s) {
     stage = s;
-    const names = { india: "INDIA", tn: "TAMIL NADU", chennai: "CHENNAI", found: "FARM", init: "FARM", descend: "FARM" };
-    const order = ["india", "tn", "chennai", "found"];
+    const order = ["tn", "district", "found"];
     const idx = Math.max(0, order.indexOf(s === "init" || s === "descend" ? "found" : s));
-    const trail = ["INDIA", "TAMIL NADU", "CHENNAI", "FARM"].slice(0, idx + 1);
+    const trail = ["TAMIL NADU", districtName(), "FARM"].slice(0, idx + 1);
     $("geo-crumb").innerHTML = trail.map((t, i) => (i === trail.length - 1 ? "<b>" + t + "</b>" : t)).join(" / ");
-    $("geo-hud-region").textContent = (s === "chennai" || s === "found" || s === "init" || s === "descend") ? "CHENNAI" : "TAMIL NADU";
+    $("geo-hud-region").textContent = (s === "district" || s === "found" || s === "init" || s === "descend") ? districtName() : "TAMIL NADU";
     const hints = {
-      india: "CLICK TAMIL NADU TO ENTER",
-      tn: "SELECT CHENNAI REGION",
-      chennai: "SELECT THE GLOWING FARM NODE",
+      tn: "SELECT " + districtName() + " DISTRICT",
+      district: "SELECT THE GLOWING FARM NODE",
     };
     const h = $("geo-hint");
     h.style.display = hints[s] ? "block" : "none";
@@ -116,7 +113,7 @@
       yieldT: kg != null ? (kg / 1000).toFixed(2) + " t/ha" : "—",
       area: d.area != null ? d.area + " ha" : "—",
       coords: d.farm_lat != null ? d.farm_lat.toFixed(4) + ", " + d.farm_lon.toFixed(4) : "—",
-      place: (d.location_label || d.state || "—"),
+      place: (d.location_label || d.district || "—"),
       orion: d.fiware_source === "orion",
     };
   }
@@ -133,15 +130,12 @@
       row("LIVE WEATHER", s.temp) + row("CROP", s.crop) + row("WATER STATUS", s.status, s.statusTone) + row("DROUGHT RISK", s.drought, s.droughtTone) +
       "<div id='geo-legend'><div class='geo-mono' style='color:#9fd8e2'>MODELLED AGRICULTURAL STRESS</div>" +
       "<i style='background:#3ddc84'></i>LOWER<br><i style='background:#f0b34a'></i>MODERATE<br><i style='background:#e05a5a'></i>HIGH<br>" +
-      "<span style='opacity:.7'>Illustrative zones. Chennai colour follows the live twin state.</span></div>";
+      "<span style='opacity:.7'>Only " + districtName() + " carries a live twin state; other districts are unbound.</span></div>";
   }
-  function chennaiPanel() {
+  function districtPanel() {
     const s = twinSummary();
-    return "<h3>CHENNAI REGION</h3><div class='tag'>AGRICULTURAL ZONE</div>" +
+    return "<h3>" + districtName() + " DISTRICT</h3><div class='tag'>AGRICULTURAL ZONE</div>" +
       row("WEATHER", s.temp) + row("RAINFALL", s.rain) + row("CROP", s.crop) + row("TWIN STATUS", "● ACTIVE", "good");
-  }
-  function indiaPanel() {
-    return "<h3>INDIA</h3><div class='tag'>NATIONAL AGRICULTURAL DIGITAL TWIN</div>" + row("ACTIVE REGION", "TAMIL NADU", "good") + row("COVERAGE", "STATE-LEVEL");
   }
 
   // ---- scene ---------------------------------------------------------------
@@ -163,13 +157,6 @@
     const grid = new THREE.GridHelper(90, 90, 0x0f4a52, 0x0a2227);
     grid.position.y = -0.06; grid.material.transparent = true; grid.material.opacity = 0.55; scene.add(grid);
 
-    // India
-    indiaMat = new THREE.MeshStandardMaterial({ color: 0x0d2a31, roughness: 0.9, metalness: 0.1, transparent: true, opacity: 1 });
-    const ig = extrude(INDIA, 0.14);
-    indiaMesh = new THREE.Mesh(ig, indiaMat); scene.add(indiaMesh);
-    indiaEdges = new THREE.LineSegments(new THREE.EdgesGeometry(ig, 30), new THREE.LineBasicMaterial({ color: 0x3aa6b6, transparent: true, opacity: 0.75 }));
-    scene.add(indiaEdges);
-
     // Tamil Nadu (raised + glowing)
     tnMat = new THREE.MeshStandardMaterial({ color: 0x14614a, emissive: 0x1fbf75, emissiveIntensity: 0.4, roughness: 0.6, transparent: true, opacity: 1 });
     const tg = extrude(TAMIL_NADU, 0.4);
@@ -179,23 +166,24 @@
     scene.add(tnEdges);
 
     // stress zones (only visible in TN stage)
-    stressGroup = new THREE.Group(); stressGroup.visible = false; scene.add(stressGroup);
+    stressGroup = new THREE.Group(); stressGroup.visible = true; scene.add(stressGroup);
     const t = DATA.twin_state || {};
-    const chennaiColor = t.status === "Healthy" ? 0x3ddc84 : (t.drought_risk && t.heat_stress) ? 0xe05a5a : 0xf0b34a;
+    const farmColor = t.status === "Healthy" ? 0x3ddc84 : (t.drought_risk && t.heat_stress) ? 0xe05a5a : 0xf0b34a;
     DISTRICTS.forEach(d => {
-      const col = d.id === "chennai" ? chennaiColor : d.stress;
-      const m = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0, depthWrite: false });
-      const disc = new THREE.Mesh(new THREE.CircleGeometry(d.id === "chennai" ? 0.55 : 0.75, 40), m);
-      disc.rotation.x = -Math.PI / 2;
-      const p = proj(d.lon, d.lat); disc.position.set(p.x, 0.43, p.z);
-      stressGroup.add(disc); stressMats.push(m);
+      const p = proj(d.lon, d.lat);
+      if (d === farmD) {   // only the farm's district has a live twin state to colour by
+        const m = new THREE.MeshBasicMaterial({ color: farmColor, transparent: true, opacity: 0.5, depthWrite: false });
+        const disc = new THREE.Mesh(new THREE.CircleGeometry(0.4, 40), m);
+        disc.rotation.x = -Math.PI / 2; disc.position.set(p.x, 0.43, p.z);
+        stressGroup.add(disc); stressMats.push(m);
+      }
       const ring = new THREE.Mesh(new THREE.RingGeometry(0.06, 0.1, 24), new THREE.MeshBasicMaterial({ color: 0xeaf7f9, transparent: true, opacity: 0.9 }));
       ring.rotation.x = -Math.PI / 2; ring.position.set(p.x, 0.45, p.z); stressGroup.add(ring);
     });
 
-    // farm nodes around Chennai
+    // farm nodes around the farm district
     farmGroup = new THREE.Group(); farmGroup.visible = false; scene.add(farmGroup);
-    const cp = proj(80.27, 13.08);
+    const cp = proj(farmD.lon, farmD.lat);
     const nodes = [
       { off: [0.08, -0.02], main: true },
       { off: [-0.38, 0.2] }, { off: [0.42, 0.26] }, { off: [-0.12, -0.42] }, { off: [0.5, -0.28] },
@@ -228,21 +216,19 @@
     scene.add(particles);
 
     // labels
-    STATE_LABELS.forEach(s => addLabel(s[0], proj(s[1], s[2]).setY(0.2), ["india"], "dim"));
-    addLabel("TAMIL NADU", proj(78.2, 11.1).setY(0.6), ["india"], "target", () => { if (stage === "india") goTN(); });
     DISTRICTS.forEach(d => {
-      const isC = d.id === "chennai";
-      addLabel(d.name, proj(d.lon, d.lat).setY(0.9), ["tn"], isC ? "target" : "", isC
-        ? () => { if (stage === "tn") goChennai(); }
-        : () => toast("DEMO TWIN IS BOUND TO THE CHENNAI REGION"));
+      const isF = d === farmD;
+      addLabel(d.name.toUpperCase(), proj(d.lon, d.lat).setY(0.45), ["tn"], isF ? "target" : "dim", isF
+        ? () => { if (stage === "tn") goDistrict(); }
+        : () => toast("DEMO TWIN IS BOUND TO " + districtName()));
     });
-    addLabel("FARM-01 · LIVE TWIN", FARM_POS.clone().setY(0.8), ["chennai"], "target", () => { if (stage === "chennai") goFarm(); });
+    addLabel("FARM-01 · LIVE TWIN", FARM_POS.clone().setY(0.8), ["district"], "target", () => { if (stage === "district") goFarm(); });
     nodesLabels();
     function nodesLabels() {
-      farmGroup.children.forEach(g => { if (!g.userData.main) addLabel("UNBOUND ZONE", g.position.clone().setY(0.6), ["chennai"], "dim"); });
+      farmGroup.children.forEach(g => { if (!g.userData.main) addLabel("UNBOUND ZONE", g.position.clone().setY(0.6), ["district"], "dim"); });
     }
 
-    camPos.copy(VIEWS.india.pos); camTarget.copy(VIEWS.india.target);
+    camPos.copy(VIEWS.tn.pos); camTarget.copy(VIEWS.tn.target);
   }
 
   // ---- render loop ---------------------------------------------------------
@@ -263,22 +249,43 @@
     for (let i = 0; i < arr.length; i += 3) { arr[i + 1] += 0.008; if (arr[i + 1] > 8) arr[i + 1] = 0; }
     particles.geometry.attributes.position.needsUpdate = true;
 
-    const sway = (stage === "india") ? Math.sin(t * 0.35) * 1.4 : (stage === "tn" ? Math.sin(t * 0.35) * 0.25 : 0);
+    const sway = stage === "tn" ? Math.sin(t * 0.35) * 0.25 : 0;
     camera.position.set(camPos.x + sway, camPos.y, camPos.z);
     camera.lookAt(camTarget);
     renderer.render(scene, camera);
 
     // labels
     const w = window.innerWidth, h = window.innerHeight;
-    labels.forEach(l => {
-      const on = l.states.indexOf(stage) !== -1;
-      l.el.classList.toggle("on", on);
-      if (!on) return;
+    const placed = [];   // screen rects already taken by labels
+    const hit = (r) => placed.some(q => r.l < q.r + 3 && r.r > q.l - 3 && r.t < q.b + 2 && r.b > q.t - 2);
+    // important labels (the farm's) claim their space first, then the dim district names
+    const active = labels.filter(l => l.states.indexOf(stage) !== -1);
+    labels.forEach(l => l.el.classList.toggle("on", active.indexOf(l) !== -1));
+    active.sort((a, b) => (a.el.classList.contains("dim") ? 1 : 0) - (b.el.classList.contains("dim") ? 1 : 0));
+    active.forEach(l => {
       tmpV.copy(l.vec).project(camera);
       if (tmpV.z > 1) { l.el.style.visibility = "hidden"; return; }
+      const x = (tmpV.x * 0.5 + 0.5) * w, y = (-tmpV.y * 0.5 + 0.5) * h;
+      const lw = l.el.offsetWidth, lh = l.el.offsetHeight || 14;
+      let side = "";
+      let rect = { l: x - lw / 2, r: x + lw / 2, t: y - lh / 2, b: y + lh / 2 };
+      if (l.el.classList.contains("dim") && stage === "tn") {
+        // district names sit beside their marker: right, left, then above/below, else hidden
+        const cands = [
+          ["right", { l: x + 9, r: x + 9 + lw, t: y - lh / 2, b: y + lh / 2 }],
+          ["left", { l: x - 9 - lw, r: x - 9, t: y - lh / 2, b: y + lh / 2 }],
+          ["above", { l: x - lw / 2, r: x + lw / 2, t: y - 10 - lh, b: y - 10 }],
+          ["below", { l: x - lw / 2, r: x + lw / 2, t: y + 10, b: y + 10 + lh }],
+        ];
+        const pick = cands.find(c => !hit(c[1]) && c[1].l > 8 && c[1].r < w - 8);
+        if (!pick) { l.el.style.visibility = "hidden"; return; }
+        side = pick[0]; rect = pick[1];
+      }
+      placed.push(rect);
+      l.el.dataset.side = side;
       l.el.style.visibility = "visible";
-      l.el.style.left = ((tmpV.x * 0.5 + 0.5) * w) + "px";
-      l.el.style.top = ((-tmpV.y * 0.5 + 0.5) * h) + "px";
+      l.el.style.left = (side === "right" ? x + 9 : side === "left" ? x - 9 : x) + "px";
+      l.el.style.top = (side === "above" ? y - 10 - lh / 2 : side === "below" ? y + 10 + lh / 2 : y) + "px";
     });
   }
   function startLoop() { if (!running) { running = true; clock.start(); frame(); } }
@@ -305,24 +312,12 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
   // ---- navigation steps ----------------------------------------------------
-  async function goTN() {
+  async function goDistrict() {
     if (busy) return; busy = true;
-    stage = "tn"; setStage("tn");
-    stressGroup.visible = true;
-    showPanel(tnPanel());
-    await flyTo(VIEWS.tn, 1400, e => {
-      indiaMat.opacity = 1 - 0.65 * e;
-      indiaEdges.material.opacity = 0.75 - 0.5 * e;
-      stressMats.forEach(m => (m.opacity = 0.5 * e));
-    });
-    busy = false;
-  }
-  async function goChennai() {
-    if (busy) return; busy = true;
-    stage = "chennai"; setStage("chennai");
+    stage = "district"; setStage("district");
     farmGroup.visible = true;
-    showPanel(chennaiPanel());
-    await flyTo(VIEWS.chennai, 1500, e => {
+    showPanel(districtPanel());
+    await flyTo(VIEWS.district, 1500, e => {
       tnMat.opacity = 1 - 0.55 * e;
       stressMats.forEach(m => (m.opacity = 0.5 - 0.5 * e));
     });
@@ -422,7 +417,7 @@
     if (!hud) { hud = document.createElement("div"); hud.id = "farm-hud"; hud.className = "geo-glass"; wrap.appendChild(hud); }
     const s = twinSummary();
     hud.innerHTML =
-      '<div class="crumb">INDIA / TAMIL NADU / CHENNAI / <b>FARM</b></div>' +
+      '<div class="crumb">TAMIL NADU / ' + districtName() + ' / <b>FARM</b></div>' +
       "<h4>FARM DIGITAL TWIN</h4>" +
       '<div class="loc">' + s.place.toUpperCase() + "</div>" +
       '<div class="src ' + (s.orion ? "tone-good" : "tone-warn") + '">' + (s.orion ? "● LIVE · FIWARE ORION" : "○ LOCAL FALLBACK") + "</div>" +
@@ -433,19 +428,23 @@
   }
 
   // ---- interaction ---------------------------------------------------------
-  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+  // Hovering a marker names its district, so districts whose label was hidden for
+  // lack of room can still be identified.
+  const hoverV = new THREE.Vector3();
   function onCanvasMove(ev) {
-    if (stage !== "india") { $("geo-canvas").style.cursor = "default"; return; }
-    ndc.set((ev.clientX / window.innerWidth) * 2 - 1, -(ev.clientY / window.innerHeight) * 2 + 1);
-    ray.setFromCamera(ndc, camera);
-    $("geo-canvas").style.cursor = ray.intersectObject(tnMesh).length ? "pointer" : "default";
-  }
-  function onCanvasClick(ev) {
-    if (stage !== "india") return;
-    ndc.set((ev.clientX / window.innerWidth) * 2 - 1, -(ev.clientY / window.innerHeight) * 2 + 1);
-    ray.setFromCamera(ndc, camera);
-    if (ray.intersectObject(tnMesh).length) goTN();
-    else if (ray.intersectObject(indiaMesh).length) toast("ACTIVE TWIN REGION: TAMIL NADU");
+    const tip = $("geo-hover");
+    if (stage !== "tn") { tip.style.display = "none"; return; }
+    const w = window.innerWidth, h = window.innerHeight;
+    let best = null, bestD = 18;
+    DISTRICTS.forEach(d => {
+      hoverV.copy(proj(d.lon, d.lat)).setY(0.45).project(camera);
+      const dist = Math.hypot((hoverV.x * 0.5 + 0.5) * w - ev.clientX, (-hoverV.y * 0.5 + 0.5) * h - ev.clientY);
+      if (dist < bestD) { bestD = dist; best = d; }
+    });
+    if (!best) { tip.style.display = "none"; return; }
+    tip.textContent = best.name.toUpperCase();
+    tip.style.left = (ev.clientX + 14) + "px"; tip.style.top = (ev.clientY - 8) + "px";
+    tip.style.display = "block";
   }
   function onResize() {
     if (!renderer) return;
@@ -465,17 +464,20 @@
 
   // ---- mount ---------------------------------------------------------------
   function mount() {
+    DISTRICTS = DATA.districts || [];
+    if (!DISTRICTS.length) throw new Error("no district list from /api/twin-state");
+    setFarmDistrict();
     overlay = document.createElement("div");
     overlay.id = "geo-overlay";
     overlay.innerHTML =
       '<canvas id="geo-canvas"></canvas><div id="geo-vignette"></div><div id="geo-labels"></div>' +
-      '<div id="geo-hud" class="geo-glass"><div class="brand">AGRI-TWIN</div><div class="sub">NATIONAL AGRICULTURAL DIGITAL TWIN</div>' +
+      '<div id="geo-hud" class="geo-glass"><div class="brand">AGRI-TWIN</div><div class="sub">TAMIL NADU AGRICULTURAL DIGITAL TWIN</div>' +
       '<div class="region-label">ACTIVE REGION</div><div class="region" id="geo-hud-region">TAMIL NADU</div>' +
       '<div class="dots geo-mono"><div>LIVE WEATHER<span class="dot" id="dot-weather"></span></div><div>ML MODEL<span class="dot" id="dot-ml"></span></div><div>ORION<span class="dot" id="dot-orion"></span></div></div></div>' +
       '<div id="geo-crumb" class="geo-glass geo-mono"></div>' +
       '<div id="geo-panel" class="geo-glass"></div>' +
       '<div id="geo-found" class="geo-glass"></div><div id="geo-init" class="geo-glass geo-mono"></div>' +
-      '<div id="geo-hint" class="geo-glass geo-mono"></div><div id="geo-toast" class="geo-glass geo-mono"></div>' +
+      '<div id="geo-hint" class="geo-glass geo-mono"></div><div id="geo-toast" class="geo-glass geo-mono"></div><div id="geo-hover" class="geo-mono"></div>' +
       '<button id="geo-skip">SKIP INTRO ›</button>';
     document.body.appendChild(overlay);
     document.body.style.overflow = "hidden";
@@ -485,14 +487,13 @@
     $("dot-ml").className = "dot " + (d.recommendation && d.recommendation.predicted_yield_kg_per_ha != null ? "ok" : "off");
     $("dot-orion").className = "dot " + (d.fiware_source === "orion" ? "ok" : "warn");
     $("geo-skip").addEventListener("click", skip);
-    $("geo-canvas").addEventListener("click", onCanvasClick);
     $("geo-canvas").addEventListener("mousemove", onCanvasMove);
     window.addEventListener("resize", onResize);
     document.addEventListener("keydown", e => { if (e.key === "Escape" && stage !== "done") skip(); });
 
     buildScene();
-    setStage("india");
-    showPanel(indiaPanel());
+    setStage("tn");
+    showPanel(tnPanel());
     startLoop();
   }
 

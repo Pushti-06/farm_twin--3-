@@ -14,7 +14,7 @@ import pickle
 
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_absolute_error, r2_score
+from sklearn.metrics import r2_score
 from sklearn.preprocessing import LabelEncoder
 import numpy as np
 
@@ -28,26 +28,27 @@ def main():
         return
 
     crop_encoder = LabelEncoder()
-    state_encoder = LabelEncoder()
-    crops = [r["Crop"] for r in rows]
-    states = [r["State"] for r in rows]
-    crop_encoder.fit(crops)
-    state_encoder.fit(states)
+    district_encoder = LabelEncoder()
+    crop_encoder.fit([r["Crop"] for r in rows])
+    district_encoder.fit([r["District"] for r in rows])
 
     X, y = [], []
     for r in rows:
         X.append([
             crop_encoder.transform([r["Crop"]])[0],
-            state_encoder.transform([r["State"]])[0],
-            float(r["Year"]),
-            float(r["Area_1000ha"]),
+            district_encoder.transform([r["District"]])[0],
             float(r["Avg_Temp_C"]),
             float(r["Total_Rainfall_mm"]),
-            float(r["Total_ET0_mm"]) if r["Total_ET0_mm"] else 0.0,
+            float(r["Total_ET0_mm"]),
         ])
         y.append(float(r["Yield_kg_per_ha"]))
 
-    X, y = np.array(X), np.array(y)
+    # No year feature on purpose: with it the model learns the long-run upward trend
+    # and extrapolates it into the present, which biases forecasts high and makes them
+    # less responsive to the weather. Crop, district and weather are the only inputs.
+    # Yields span ~90 kg/ha (cardamom) to ~100,000 kg/ha (sugarcane), so the model
+    # learns log(yield); that keeps small crops from being drowned out by large ones.
+    X, y = np.array(X), np.log(np.array(y))
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
     candidates = {
@@ -59,21 +60,22 @@ def main():
     for name, model in candidates.items():
         model.fit(X_train, y_train)
         preds = model.predict(X_test)
-        mae = mean_absolute_error(y_test, preds)
         r2 = r2_score(y_test, preds)
-        print(f"{name}: R^2 = {r2:.3f}, MAE = {mae:.1f} kg/ha")
+        mape = float(np.mean(np.abs(np.exp(preds) - np.exp(y_test)) / np.exp(y_test))) * 100
+        print(f"{name}: R^2 (log yield) = {r2:.3f}, mean abs. error = {mape:.1f}%")
         if r2 > best_r2:
             best_name, best_model, best_r2 = name, model, r2
 
-    print(f"\nSelected {best_name} (R^2 = {best_r2:.3f})")
+    print(f"\nSelected {best_name} (R^2 = {best_r2:.3f} on log yield)")
 
     with open("model/yield_model.pkl", "wb") as f:
         pickle.dump({
             "model": best_model,
             "model_name": best_name,
             "crop_encoder": crop_encoder,
-            "state_encoder": state_encoder,
-            "feature_order": ["crop", "state", "year", "area_1000ha", "avg_temp", "total_rainfall", "total_et0"],
+            "district_encoder": district_encoder,
+            "log_target": True,
+            "feature_order": ["crop", "district", "avg_temp", "total_rainfall", "total_et0"],
         }, f)
 
     print("Saved model/yield_model.pkl")

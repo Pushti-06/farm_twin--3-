@@ -232,8 +232,8 @@ function applyLiveConditions(data) {
   const tempTxt = cw.temperature !== null && cw.temperature !== undefined ? `${cw.temperature}°C` : "—";
   const humTxt = cw.humidity !== null && cw.humidity !== undefined ? `${cw.humidity}%` : "—";
   const windTxt = cw.wind_speed !== null && cw.wind_speed !== undefined ? `${cw.wind_speed} km/h` : "—";
-  const place = data.location_label || data.state;
-  const precisionNote = data.used_exact_location ? "" : " (state-level approximation — enter an exact village/town on the Dashboard for local accuracy)";
+  const place = data.location_label || data.district;
+  const precisionNote = data.used_exact_location ? "" : " (enter an exact village/town on the Dashboard for local accuracy)";
   label.textContent = `🌍 Live conditions at ${place}${precisionNote}: ${p.label} · ${tempTxt}, ${humTxt} humidity, ${windTxt} wind — auto-loaded from real current weather (updated ${data.updated_at}).`;
 }
 

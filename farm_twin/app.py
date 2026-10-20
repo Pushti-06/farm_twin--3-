@@ -10,7 +10,7 @@ split in the system architecture:
 
 Run:
     pip install -r requirements.txt
-    python process_data.py              # once, aggregates the real dataset
+    python process_data.py              # once, cleans + aggregates the Tamil Nadu dataset
     python build_training_dataset.py    # once, merges in real historical weather (needs internet)
     python train_model.py               # once, trains the yield model
     python app.py
@@ -23,8 +23,10 @@ from datetime import datetime
 
 from flask import Flask, render_template, request, jsonify
 
-from state_coordinates import STATE_COORDINATES
-from weather import get_current_weather, get_recent_history, search_location
+import math
+
+from tn_districts import TN_DISTRICTS, display_name
+from weather import get_current_weather, get_recent_history, get_trailing_year_summary, search_location
 from digital_twin import DigitalTwin
 from recommendation import generate_recommendation
 from fiware_client import is_fiware_reachable, upsert_twin_entity, get_twin_entity
@@ -36,14 +38,25 @@ app = Flask(__name__)
 # Load real data + trained model once at startup
 # ---------------------------------------------------------------------------
 
-with open("data/crop_yield_by_state_year.csv") as f:
+with open("data/crop_yield_by_district_year.csv") as f:
     YIELD_ROWS = list(csv.DictReader(f))
 
-STATES = sorted(STATE_COORDINATES.keys())
-CROPS_BY_STATE = defaultdict(set)
+# A district/crop pair is only offered when it has enough recorded years for the
+# historical average and trend chart to mean something (e.g. Chennai only has a
+# single banana record, so it is left out).
+MIN_YEARS_OF_HISTORY = 8
+_years = defaultdict(set)
 for r in YIELD_ROWS:
-    CROPS_BY_STATE[r["State"]].add(r["Crop"])
-CROPS_BY_STATE = {s: sorted(c) for s, c in CROPS_BY_STATE.items()}
+    _years[(r["District"], r["Crop"])].add(r["Year"])
+CROPS_BY_DISTRICT = defaultdict(list)
+for (d, c), years in sorted(_years.items()):
+    if len(years) >= MIN_YEARS_OF_HISTORY:
+        CROPS_BY_DISTRICT[d].append(c)
+CROPS_BY_DISTRICT = dict(CROPS_BY_DISTRICT)
+# districts that have recorded yield data, as (value, label) for the dashboard
+DISTRICTS = [(d, display_name(d)) for d in sorted(CROPS_BY_DISTRICT)]
+# every district's headquarters, for the 3D map
+DISTRICT_MAP = [{"id": d, "name": display_name(d), "lat": lat, "lon": lon} for d, (lat, lon) in sorted(TN_DISTRICTS.items())]
 
 try:
     with open("model/yield_model.pkl", "rb") as f:
@@ -56,29 +69,30 @@ FARM_TWINS = {}       # farm_id -> DigitalTwin instance
 LAST_RESULT = None    # most recent full prediction+twin+recommendation result
 
 
-def historical_avg_yield(state, crop):
-    matches = [float(r["Yield_kg_per_ha"]) for r in YIELD_ROWS if r["State"] == state and r["Crop"] == crop]
+def historical_avg_yield(district, crop):
+    matches = [float(r["Yield_kg_per_ha"]) for r in YIELD_ROWS if r["District"] == district and r["Crop"] == crop]
     return sum(matches) / len(matches) if matches else None
 
 
-def historical_trend(state, crop):
+def historical_trend(district, crop):
     matches = sorted(
-        [(int(r["Year"]), float(r["Yield_kg_per_ha"])) for r in YIELD_ROWS if r["State"] == state and r["Crop"] == crop]
+        [(int(r["Year"]), float(r["Yield_kg_per_ha"])) for r in YIELD_ROWS if r["District"] == district and r["Crop"] == crop]
     )
     return {"years": [m[0] for m in matches], "yields": [m[1] for m in matches]}
 
 
-def predict_yield(state, crop, area, avg_temp, total_rainfall, total_et0):
+def predict_yield(district, crop, avg_temp, total_rainfall, total_et0):
     if MODEL_BUNDLE is None:
         return None
     b = MODEL_BUNDLE
     try:
         crop_enc = b["crop_encoder"].transform([crop])[0]
-        state_enc = b["state_encoder"].transform([state])[0]
+        district_enc = b["district_encoder"].transform([district])[0]
     except ValueError:
-        return None  # crop/state wasn't in training data
-    features = [[crop_enc, state_enc, datetime.now().year, area, avg_temp, total_rainfall, total_et0]]
-    return float(b["model"].predict(features)[0])
+        return None  # crop/district wasn't in training data
+    features = [[crop_enc, district_enc, avg_temp, total_rainfall, total_et0]]
+    pred = float(b["model"].predict(features)[0])
+    return math.exp(pred) if b.get("log_target") else pred
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +101,7 @@ def predict_yield(state, crop, area, avg_temp, total_rainfall, total_et0):
 
 @app.route("/")
 def dashboard():
-    return render_template("dashboard.html", states=STATES, crops_by_state=CROPS_BY_STATE, model_ready=MODEL_BUNDLE is not None)
+    return render_template("dashboard.html", districts=DISTRICTS, crops_by_district=CROPS_BY_DISTRICT, model_ready=MODEL_BUNDLE is not None)
 
 
 @app.route("/twin")
@@ -112,13 +126,16 @@ def api_predict():
     global LAST_RESULT
 
     body = request.get_json(force=True)
-    state = body.get("state")
+    district = body.get("district")
     crop = body.get("crop")
     area = float(body.get("area", 1.0))
 
+    if crop not in CROPS_BY_DISTRICT.get(district, []):
+        return jsonify({"error": f"There isn't enough recorded {crop} yield history for that district. Pick another crop or district."}), 400
+
     # Exact farm location (geocoded village/town) takes priority over the
-    # state-capital coordinate fallback — this is what makes weather genuinely
-    # local to the farmer's actual field, not a generic state-wide proxy.
+    # district-headquarters coordinate fallback — this is what makes weather
+    # genuinely local to the farmer's actual field.
     farm_lat = body.get("farm_lat")
     farm_lon = body.get("farm_lon")
     farm_location_name = body.get("farm_location_name")
@@ -127,12 +144,12 @@ def api_predict():
         lat, lon = float(farm_lat), float(farm_lon)
         location_label = farm_location_name or f"{lat:.4f}, {lon:.4f}"
         used_exact_location = True
-    elif state in STATE_COORDINATES:
-        lat, lon = STATE_COORDINATES[state]
-        location_label = f"{state} (state-level approximation)"
+    elif district in TN_DISTRICTS:
+        lat, lon = TN_DISTRICTS[district]
+        location_label = f"{display_name(district)} district (headquarters approximation)"
         used_exact_location = False
     else:
-        return jsonify({"error": "Unknown state or farm location"}), 400
+        return jsonify({"error": "Unknown district or farm location"}), 400
 
     current = get_current_weather(lat, lon)
     recent = get_recent_history(lat, lon, days=14)
@@ -141,18 +158,28 @@ def api_predict():
         return jsonify({"error": "Could not reach the weather service. Check your internet connection and try again."}), 503
 
     # update (or create) this farm's digital twin from real recent weather
-    farm_id = f"{state}:{crop}:{location_label}"
+    farm_id = f"{district}:{crop}:{location_label}"
     twin = FARM_TWINS.get(farm_id) or DigitalTwin(farm_id, crop)
     twin.update_state(recent)
     FARM_TWINS[farm_id] = twin
     twin_state = twin.simulate()
 
-    avg_temp = sum(d["temp_max"] for d in recent if d["temp_max"] is not None) / len(recent)
-    total_rainfall = sum(d["precipitation"] or 0 for d in recent)
-    total_et0 = sum(d["et0"] or 0 for d in recent)
+    # The model was trained on whole-year weather features, so it is asked about
+    # the trailing 365 days (not the 14-day window the twin simulation uses).
+    year_weather = get_trailing_year_summary(lat, lon)
+    if year_weather is None:
+        return jsonify({"error": "Could not fetch the last year of weather for the yield model. Try again shortly."}), 503
 
-    predicted = predict_yield(state, crop, area, avg_temp, total_rainfall, total_et0)
-    hist_avg = historical_avg_yield(state, crop)
+    predicted = predict_yield(district, crop, year_weather["avg_temp"], year_weather["total_rainfall"], year_weather["total_et0"])
+    hist_avg = historical_avg_yield(district, crop)
+
+    # How the forecast evolved: the model re-run on the 365 days of weather ending
+    # at each of the last 12 month-ends (same crop/district; weather is the only thing that moves).
+    prediction_history = []
+    for w in year_weather["rolling"]:
+        p = predict_yield(district, crop, w["avg_temp"], w["total_rainfall"], w["total_et0"])
+        if p is not None:
+            prediction_history.append({"month": w["month"], "date": w["date"], "predicted": round(p, 1)})
 
     if predicted is None:
         return jsonify({"error": "Model isn't trained yet — run train_model.py first."}), 503
@@ -160,11 +187,11 @@ def api_predict():
     recommendation = generate_recommendation(twin_state, predicted, hist_avg)
 
     updated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
-    ngsi_id = entity_id_for(state, crop)
+    ngsi_id = entity_id_for(district, crop)
     fiware_up = upsert_twin_entity(ngsi_id, twin_state, predicted, updated_at)
 
     LAST_RESULT = {
-        "state": state,
+        "district": district,
         "crop": crop,
         "area": area,
         "location_label": location_label,
@@ -177,7 +204,9 @@ def api_predict():
         "twin_history": twin.history[-14:],
         "yield_trajectory": twin.yield_trajectory(predicted),
         "recommendation": recommendation,
-        "historical_trend": historical_trend(state, crop),
+        "historical_trend": historical_trend(district, crop),
+        "monthly_weather": year_weather["monthly"],
+        "prediction_history": prediction_history,
         "updated_at": updated_at,
         "fiware_entity_id": ngsi_id,
         "fiware_connected": fiware_up,
@@ -191,7 +220,7 @@ def api_twin_state():
     if LAST_RESULT is None:
         return jsonify({"ready": False})
 
-    result = dict(LAST_RESULT)
+    result = dict(LAST_RESULT, districts=DISTRICT_MAP)
     orion_state = get_twin_entity(LAST_RESULT["fiware_entity_id"])
     if orion_state:
         # Orion is the source of truth for the twin's state when it's reachable —
