@@ -52,7 +52,27 @@
   </section>
 
   <section class="card">
-    <h2>Field Visualization (3D)</h2>
+    <h2>3D Twin of This Place</h2>
+    <p class="muted" style="margin-top:0">The real location <strong id="place3d-name"></strong>: satellite imagery on real terrain, real mapped buildings, and the twin's simulated soil water painted onto the green vegetation in the image. Weather follows the live data and the what-if buttons below.</p>
+    <div class="p3-bar">
+      <div class="p3-modes" id="place3d-modes">
+        <button data-mode="sat">Satellite</button><button data-mode="twin" class="on">Twin: vegetation</button><button data-mode="moist">Twin: all land</button>
+      </div>
+      <button id="place3d-bldbtn" class="p3-btn on">Buildings</button>
+      <label class="p3-relief">Relief <input id="place3d-relief" type="range" min="1" max="8" step="1" value="3"> <span id="place3d-relief-val">3×</span></label>
+    </div>
+    <div class="p3-view" id="place3d-view">
+      <div id="place3d-load" class="p3-load">Preparing…</div>
+      <div id="place3d-pop" class="p3-pop" style="display:none"></div>
+      <div class="p3-hud"><div>SOIL WATER <b id="place3d-water">—</b></div><div>WEATHER <b id="place3d-weather">—</b></div><div id="place3d-status"></div></div>
+    </div>
+    <div id="place3d-legend" class="p3-legend"><span>dry</span><i></i><span>wet</span></div>
+    <div id="place3d-report" class="p3-report"></div>
+    <p class="muted"><span id="place3d-veg"></span> · <span id="place3d-bld"></span>. Drag to rotate, right-drag to pan, scroll to zoom, click the ground or a building to read it. Imagery © Esri, Maxar, Earthstar Geographics; elevation AWS Terrain Tiles; buildings © OpenStreetMap contributors. The colours are the <strong>simulated</strong> root-zone water of the twin (from real weather), shifted slightly by terrain position (low spots wetter, rises drier). Green-vegetation detection comes from the image colours, so bare or dry fields are not coloured.</p>
+  </section>
+
+  <section class="card">
+    <h2>Simulated Crop Plot (3D, illustrative)</h2>
     <div id="live-condition-label" class="notice good" style="margin-bottom:12px;"></div>
     <div id="twin-3d-wrap" style="position:relative;">
       <div id="twin-3d-container" style="width:100%; height:560px; border-radius:14px; overflow:hidden; background:#F6FAF6;"></div>
@@ -109,8 +129,10 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <link rel="stylesheet" href="{{ url_for('static', filename='geo.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='place3d.css') }}">
 <script src="{{ url_for('static', filename='landscape.js') }}"></script>
 <script src="{{ url_for('static', filename='twin.js') }}"></script>
+<script src="{{ url_for('static', filename='place3d.js') }}"></script>
 <script src="{{ url_for('static', filename='geo.js') }}"></script>
 <script src="{{ url_for('static', filename='observed.js') }}"></script>
 {% endblock %}
