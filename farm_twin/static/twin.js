@@ -225,7 +225,9 @@ function detectCondition(weatherCode, windSpeed, tempMax, precipitation) {
 function applyLiveConditions(data) {
   const cw = data.current_weather || {};
   const condition = detectCondition(cw.weather_code, cw.wind_speed, cw.temp_max, cw.precipitation);
+  window.__liveApply = true;          // the live weather is already in the twin state: not a what-if
   applyPreset(condition);
+  window.__liveApply = false;
 
   const label = document.getElementById("live-condition-label");
   const p = PRESETS[condition];
@@ -871,6 +873,7 @@ function applyPreset(name) {
   document.getElementById("rainfall-slider").value = p.delta;
   document.getElementById("whatif-value").textContent = (p.delta >= 0 ? "+" : "") + p.delta + " mm";
   applyWaterLevel(p.delta);
+  if (window.PLACE3D && !window.__liveApply) window.PLACE3D.setScenario(name, p.delta);
 
   windActive = p.wind;
   rainParticles.visible = p.rain;
@@ -893,6 +896,7 @@ function setupWhatIfSlider() {
     const val = parseInt(slider.value, 10);
     label.textContent = (val >= 0 ? "+" : "") + val + " mm";
     applyWaterLevel(val);
+    if (window.PLACE3D) window.PLACE3D.setScenario("live", val);
     // manual fine-tuning drops out of a named preset back to clear conditions
     windActive = false;
     rainParticles.visible = false;

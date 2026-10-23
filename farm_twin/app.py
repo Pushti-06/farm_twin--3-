@@ -37,6 +37,7 @@ import alerts as alert_log
 import twin_observed
 
 app = Flask(__name__)
+import place_ndvi; place_ndvi.register(app)
 
 # ---------------------------------------------------------------------------
 # Load real data + trained model once at startup
