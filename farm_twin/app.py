@@ -17,7 +17,9 @@ Run:
 """
 
 import csv
+import os
 import pickle
+import threading
 from collections import defaultdict
 from datetime import datetime
 
@@ -31,6 +33,8 @@ from digital_twin import DigitalTwin
 from recommendation import generate_recommendation
 from fiware_client import is_fiware_reachable, upsert_twin_entity, get_twin_entity
 from fiware_config import entity_id_for
+import alerts as alert_log
+import twin_observed
 
 app = Flask(__name__)
 
@@ -241,6 +245,56 @@ def api_twin_state():
         result["fiware_source"] = "local"
 
     return jsonify({"ready": True, **result})
+
+
+# ---------------------------------------------------------------------------
+# District observed twin (satellite + live weather), alerts, model report
+# ---------------------------------------------------------------------------
+
+@app.route("/api/tn/districts")
+def api_tn_districts():
+    return jsonify({"districts": twin_observed.summary()})
+
+
+@app.route("/api/tn/district/<name>")
+def api_tn_district(name):
+    key = name.upper()
+    if key not in TN_DISTRICTS:
+        return jsonify({"error": "unknown district"}), 404
+    state = twin_observed.get_state(key)
+    if state is None:
+        return jsonify({"error": "no observed state yet - the first refresh has not completed", "district": key}), 404
+    return jsonify(state)
+
+
+@app.route("/api/tn/history/<name>")
+def api_tn_history(name):
+    key = name.upper()
+    if key not in TN_DISTRICTS:
+        return jsonify({"error": "unknown district"}), 404
+    return jsonify({"district": key, "history": twin_observed.read_history(key, limit=int(request.args.get("limit", 60)))})
+
+
+@app.route("/api/alerts")
+def api_alerts():
+    district = (request.args.get("district") or "").upper() or None
+    return jsonify({"alerts": alert_log.recent_alerts(limit=int(request.args.get("limit", 50)), district=district)})
+
+
+@app.route("/api/model-info")
+def api_model_info():
+    return jsonify(twin_observed.model_info())
+
+
+@app.route("/api/tn/refresh", methods=["POST", "GET"])
+def api_tn_refresh():
+    # runs in the background; poll /api/tn/districts for progress
+    threading.Thread(target=twin_observed.refresh_all, daemon=True).start()
+    return jsonify({"started": True})
+
+
+if os.environ.get("DISABLE_SCHEDULER") != "1":
+    twin_observed.start_scheduler()
 
 
 if __name__ == "__main__":

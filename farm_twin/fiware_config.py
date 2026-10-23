@@ -39,3 +39,11 @@ def entity_id_for(district, crop):
     safe_district = district.replace(" ", "_")
     safe_crop = crop.replace(" ", "_").replace("/", "_")
     return f"urn:ngsi-ld:FarmTwin:{safe_district}:{safe_crop}"
+
+
+DISTRICT_ENTITY_TYPE = "DistrictTwin"
+
+
+def district_entity_id(district):
+    """urn:ngsi-ld:DistrictTwin:<Name>  (spaces -> underscores)"""
+    return f"urn:ngsi-ld:DistrictTwin:{district.replace(' ', '_')}"

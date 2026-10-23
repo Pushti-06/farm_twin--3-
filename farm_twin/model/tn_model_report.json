@@ -1,0 +1,178 @@
+{
+  "model_version": "tn-v2",
+  "trained_at": "2026-10-21T11:22:47+00:00",
+  "split": {
+    "train": "<= 2014",
+    "validation": [
+      2015,
+      2016
+    ],
+    "test": [
+      2017,
+      2019
+    ],
+    "n_train": 11208,
+    "n_validation": 1418,
+    "n_test": 2180,
+    "n_test_scored": 1980
+  },
+  "target": "log(yield kg/ha)",
+  "feature_sets": {
+    "csv_only": [
+      "crop",
+      "district",
+      "yield_lag1",
+      "yield_lag2",
+      "hist_mean",
+      "hist_n"
+    ],
+    "csv_weather": [
+      "crop",
+      "district",
+      "yield_lag1",
+      "yield_lag2",
+      "hist_mean",
+      "hist_n",
+      "avg_temp",
+      "total_rainfall",
+      "total_et0"
+    ]
+  },
+  "skipped": {
+    "csv_weather_satellite": "no satellite data (data/tn_district_satellite_year.csv missing or has no usable MODIS Kharif rows); run satellite_gee.py first"
+  },
+  "satellite": {
+    "season_window": "Kharif",
+    "sensor": "modis",
+    "test_row_coverage": 0.0,
+    "district_years_by_source": {}
+  },
+  "validation": {
+    "baseline_last_year": {
+      "n": 1321,
+      "mae_kg_ha": 2243.4327024981076,
+      "rmse_kg_ha": 7759.925865448693,
+      "mape_pct": 43.4660530368978,
+      "r2_kg_ha": 0.8676052599389272,
+      "rmse_log": 0.49051484294419107,
+      "r2_log": 0.9103105659900641
+    },
+    "baseline_district_crop_mean": {
+      "n": 1321,
+      "mae_kg_ha": 2520.297445119795,
+      "rmse_kg_ha": 7579.495924592757,
+      "mape_pct": 36.33313825636407,
+      "r2_kg_ha": 0.8736904364892308,
+      "rmse_log": 0.4304866972091364,
+      "r2_log": 0.9309193449299091
+    },
+    "RandomForest/csv_only": {
+      "n": 1321,
+      "mae_kg_ha": 2228.835600323962,
+      "rmse_kg_ha": 6902.066857415404,
+      "mape_pct": 41.53338035434538,
+      "r2_kg_ha": 0.8952596766279007,
+      "rmse_log": 0.4422593144478968,
+      "r2_log": 0.9270893528751627
+    },
+    "HistGradientBoosting/csv_only": {
+      "n": 1321,
+      "mae_kg_ha": 2306.9856679247973,
+      "rmse_kg_ha": 7048.468367259905,
+      "mape_pct": 45.27252517519901,
+      "r2_kg_ha": 0.8907692044239083,
+      "rmse_log": 0.4636757676101849,
+      "r2_log": 0.919856966793063
+    },
+    "RandomForest/csv_weather": {
+      "n": 1321,
+      "mae_kg_ha": 2152.106922237,
+      "rmse_kg_ha": 6846.850763711849,
+      "mape_pct": 39.15193701416704,
+      "r2_kg_ha": 0.8969288051390082,
+      "rmse_log": 0.4317765490551552,
+      "r2_log": 0.9305047569748336
+    },
+    "HistGradientBoosting/csv_weather": {
+      "n": 1321,
+      "mae_kg_ha": 2139.1965643138124,
+      "rmse_kg_ha": 6801.004600874936,
+      "mape_pct": 41.012894255841005,
+      "r2_kg_ha": 0.89830450277419,
+      "rmse_log": 0.44126123577052984,
+      "r2_log": 0.9274180670325375
+    }
+  },
+  "test": {
+    "baseline_last_year": {
+      "n": 1980,
+      "mae_kg_ha": 2101.01702020202,
+      "rmse_kg_ha": 7114.98600274999,
+      "mape_pct": 34.02641339838565,
+      "r2_kg_ha": 0.902930566978625,
+      "rmse_log": 0.5108488525113924,
+      "r2_log": 0.908454788652194
+    },
+    "baseline_district_crop_mean": {
+      "n": 1980,
+      "mae_kg_ha": 1898.0905440882455,
+      "rmse_kg_ha": 5052.064550887029,
+      "mape_pct": 31.15997820738825,
+      "r2_kg_ha": 0.9510590748460075,
+      "rmse_log": 0.4116080163271786,
+      "r2_log": 0.940568261294905
+    },
+    "RandomForest/csv_only": {
+      "n": 1980,
+      "mae_kg_ha": 1618.8015552705047,
+      "rmse_kg_ha": 4519.395333291426,
+      "mape_pct": 31.366178725973782,
+      "r2_kg_ha": 0.9608352770676082,
+      "rmse_log": 0.39011388311623635,
+      "r2_log": 0.9466132357523557
+    },
+    "HistGradientBoosting/csv_only": {
+      "n": 1980,
+      "mae_kg_ha": 1655.99779670314,
+      "rmse_kg_ha": 4544.195973554769,
+      "mape_pct": 31.49053773980831,
+      "r2_kg_ha": 0.9604042568915615,
+      "rmse_log": 0.37871517086543843,
+      "r2_log": 0.949687465811332
+    },
+    "RandomForest/csv_weather": {
+      "n": 1980,
+      "mae_kg_ha": 1631.9107342530162,
+      "rmse_kg_ha": 4636.071394838443,
+      "mape_pct": 31.14563692080925,
+      "r2_kg_ha": 0.9587869625531049,
+      "rmse_log": 0.38914793657403124,
+      "r2_log": 0.9468772864247595
+    },
+    "HistGradientBoosting/csv_weather": {
+      "n": 1980,
+      "mae_kg_ha": 1697.57766466998,
+      "rmse_kg_ha": 4631.867596891211,
+      "mape_pct": 31.25795519710438,
+      "r2_kg_ha": 0.9588616692255948,
+      "rmse_log": 0.3763052704745303,
+      "r2_log": 0.9503257419208718
+    }
+  },
+  "selected_on_validation": "RandomForest/csv_weather",
+  "interpretation": [
+    "Best naive baseline on test: baseline_district_crop_mean (log-RMSE 0.412).",
+    "Best model on test: HistGradientBoosting/csv_weather (log-RMSE 0.376).",
+    "R2 should be read cautiously: yields differ by crop by orders of magnitude, so a high R2 on log yield mostly reflects crop identity; judge improvement against the naive baselines.",
+    "The test period has only 3 years, so differences of a few percent are within noise."
+  ],
+  "notes": [
+    "Weather features are calendar-year totals (existing pipeline) and may include months after some harvests.",
+    "Metrics are on test rows that have a last-year yield so every model and baseline sees identical rows."
+  ],
+  "deployed": {
+    "config": "RandomForest/csv_weather",
+    "fitted_on_years": "<= 2016",
+    "typical_error_pct": 31.14563692080925
+  }
+}

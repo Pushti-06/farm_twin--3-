@@ -50,6 +50,12 @@
   <div id="form-error" class="notice danger" style="display:none;"></div>
 </section>
 
+<section class="card">
+  <h2>Crop Alerts</h2>
+  <p class="muted">Raised when satellite NDVI and weather are clearly off normal for a district. Details and evidence are on the <a href="{{ url_for('twin_page') }}">Digital Twin</a> page.</p>
+  <div id="observed-panel" data-mode="alerts"></div>
+</section>
+
 <div id="results" style="display:none;">
   <div id="location-used-note" class="notice good" style="margin-bottom:16px;"></div>
   <section class="card-row">
@@ -110,4 +116,5 @@
   const cropsByDistrict = {{ crops_by_district | tojson }};
 </script>
 <script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+<script src="{{ url_for('static', filename='observed.js') }}"></script>
 {% endblock %}

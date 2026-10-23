@@ -2,3 +2,7 @@ flask>=3.0
 requests>=2.31
 scikit-learn>=1.4
 numpy>=1.26
+pandas>=2.0
+apscheduler>=3.10
+earthengine-api>=0.1.390
+pytest>=8.0

@@ -66,3 +66,44 @@ def get_twin_entity(entity_id):
         }
     except (requests.exceptions.RequestException, KeyError):
         return None
+
+
+def _num(v):
+    return _attr(None if v is None else round(float(v), 4), "Number")
+
+
+def upsert_district_entity(entity_id, state):
+    """Creates/updates the per-district observed twin in Orion (type DistrictTwin).
+    Missing observations are sent as null, never as a made-up number. Returns True/False."""
+    from fiware_config import DISTRICT_ENTITY_TYPE
+    sat = (state.get("observed") or {}).get("satellite") or {}
+    s2 = sat.get("sentinel2") or {}
+    modis = sat.get("modis") or {}
+    pred = state.get("predicted") or {}
+    sim = state.get("simulated") or {}
+    alert = state.get("alert") or {}
+    ndvi_src = "sentinel2" if s2.get("ndvi") is not None else ("modis" if modis.get("ndvi") is not None else None)
+    pick = (lambda k: s2.get(k) if ndvi_src == "sentinel2" else modis.get(k))
+    body = {
+        "id": entity_id, "type": DISTRICT_ENTITY_TYPE,
+        "ndvi": _num(pick("ndvi")), "evi": _num(pick("evi")), "lswi": _num(pick("lswi")),
+        "satelliteSource": _attr(ndvi_src, "Text"),
+        "satelliteDate": _attr(s2.get("last_acquisition") if ndvi_src == "sentinel2" else modis.get("date"), "Text"),
+        "ndviAnomalyZ": _num((sat.get("anomaly") or {}).get("z")),
+        "predictedYield": _num(pred.get("yield_kg_ha")),
+        "predictedCrop": _attr(pred.get("crop"), "Text"),
+        "modelVersion": _attr(pred.get("model_version"), "Text"),
+        "modelTypicalErrorPct": _num(pred.get("typical_error_pct")),
+        "modelFittedThrough": _attr(pred.get("fitted_through"), "Number"),
+        "soilWaterMm": _num(sim.get("soil_water_mm")),
+        "alertLevel": _attr(alert.get("level", "none"), "Text"),
+        "cropSeason": _attr((state.get("crop_season") or {}).get("season"), "Text"),
+        "agriYear": _attr((state.get("crop_season") or {}).get("agri_year"), "Number"),
+        "updatedAt": _attr(state.get("updated_at"), "Text"),
+    }
+    try:
+        r = requests.post(f"{ORION_URL}/v2/entities", params={"options": "upsert"},
+                          json=body, headers=WRITE_HEADERS, timeout=REQUEST_TIMEOUT)
+        return r.status_code in (201, 204)
+    except requests.exceptions.RequestException:
+        return False

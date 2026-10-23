@@ -108,3 +108,93 @@ soil-water state built from that same request.
 | `fiware_config.py` | Entity naming and Orion connection settings |
 | `fiware_client.py` | Pushes/reads the twin's state to/from Orion, with fallback |
 | `templates/`, `static/` | Frontend (HTML/CSS/JS + Plotly charts + Three.js 3D field) |
+
+## Satellite integration, observed twin and alerts (v2)
+
+The original dashboard/twin flow above is unchanged. On top of it, each Tamil Nadu district now has an
+**observed twin**: real satellite and live-weather measurements, kept visibly separate from the simulated
+soil-water state and from the ML yield forecast.
+
+```
+Sentinel-2 / MODIS (Google Earth Engine) -> cloud + quality mask, cropland mask -> NDVI, EVI, LSWI
+   -> per district / agricultural year / season  (data/tn_district_satellite_year.csv)
+   -> join with yield CSV + weather -> RandomForest / HistGradientBoosting (temporal holdout)
+   -> district entity in Orion (urn:ngsi-ld:DistrictTwin:<Name>) -> dashboard, twin page, 3D map beacons, alerts
+```
+
+### One-time Google Earth Engine setup
+
+1. Register a free **non-commercial** Earth Engine project: <https://earthengine.google.com/noncommercial/>
+2. `pip install -r requirements.txt` (includes `earthengine-api`)
+3. `earthengine authenticate`
+4. Set the project id: `set GEE_PROJECT=<your-project-id>` (cmd) or `$env:GEE_PROJECT="<id>"` (PowerShell)
+
+If GEE is not set up, `satellite_gee.py` stops with a clear message; if exports were cached earlier it rebuilds the
+CSVs from the cache instead (`--offline`).
+
+### Run order
+
+```bash
+python process_data.py            # unchanged: cleaned yield CSV
+python build_training_dataset.py  # unchanged: yearly weather features
+python build_tn_weather.py        # NEW: daily rainfall normals per district (2000-2019)
+python satellite_gee.py all       # NEW: MODIS history, Sentinel-2 2017-19, live snapshot (needs GEE)
+python train_tn_model.py          # NEW: ablations vs naive baselines -> model/tn_model_report.json
+python app.py                     # scheduler: weather every 6 h, satellite every 24 h; POST /api/tn/refresh
+pytest                            # unit tests (no network, no GEE)
+```
+
+Optional alert delivery (env vars): `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`, and/or `SMTP_HOST`, `ALERT_EMAIL_TO`
+(`SMTP_USER`, `SMTP_PASSWORD`, `SMTP_PORT`, `ALERT_EMAIL_FROM`). Only warning/critical alerts are sent.
+Set `DISABLE_SCHEDULER=1` to run the app without background refresh.
+
+### Sensors - never mixed silently
+
+Every row of `data/tn_district_satellite_year.csv` has a `source` column.
+
+| source | resolution | years | use |
+|---|---|---|---|
+| `modis` (MOD13Q1 v061) | 250 m, 16-day | 2000-present | training history (the yield CSV spans 1997-2019) and the live NDVI normal |
+| `sentinel2` (S2 SR harmonized) | 10-20 m | ~2017-present | finer live view; a 2017-19 baseline only |
+
+Run `python satellite_gee.py history` and the script prints, and `model/tn_model_report.json` records, how many
+district-years each source covers (`satellite.district_years_by_source`). Fill in the actual counts from your run;
+they are not known until GEE has been run. The Sentinel-2-only model (train 2017-18, test 2019) is reported as a
+**small-sample baseline** and is never deployed.
+
+### Model and evaluation
+
+Time split unchanged (train <= 2014, validation 2015-16, test 2017-19). Three ablations (CSV-only, CSV+weather,
+CSV+weather+satellite) x two algorithms, always next to two naive baselines (last-year yield, district-crop mean).
+All are scored on the same test rows. The deployed configuration is selected on validation, not test.
+`model/tn_test_predictions.csv` holds predicted vs actual per test row, and `/api/model-info` serves the report.
+Read R2 on log yield cautiously (it is dominated by differences between crops) and judge by whether a model beats
+the naive baselines; the report's `interpretation` field says so explicitly, including when satellite features do not help.
+
+Leakage controls (tested in `tests/test_features.py`): history features use strictly earlier years only; satellite
+features come from the Kharif window (Jun-Nov of year Y) only; satellite anomalies use each district's
+train-years-only climatology.
+
+### Alerts
+
+For each district the twin compares the latest MODIS NDVI with the 2000-2019 same-period normal (z-score and
+percent), and combines it with 14/30-day rainfall vs normal, consecutive dry days, heat, and the *simulated*
+soil-water flag. Levels: none / watch / warning / critical, with the evidence list (indicator, value, date, source).
+Warning needs two indicators; critical needs NDVI stress plus another indicator. Alerts never recommend irrigation or
+fertiliser from NDVI alone - they state what was observed and suggest verifying in the field. They are appended to
+`alerts.jsonl` (de-duplicated for 24 h) and shown on the dashboard, twin page and as beacons on the 3D Tamil Nadu map.
+
+### Limitations
+
+- **Sensor differences**: MODIS (250 m) and Sentinel-2 (10-20 m) NDVI differ in scale and bias; anomalies are computed
+  only against MODIS history. LSWI uses MODIS band 7 (2130 nm), not the 1640 nm band used with Sentinel-2.
+- **Cloud cover in the monsoon** (Jun-Nov) can leave no usable Sentinel-2 scene for weeks; the UI then says so
+  instead of filling a value.
+- **District average, not field level**: cropland-masked district means hide field variation. The cropland mask is the
+  2020 ESA WorldCover map, applied to all years.
+- **Boundaries and new districts**: districts created after the boundary dataset (Chengalpattu, Kallakurichi, Ranipet,
+  Tirupathur, Tenkasi, Tiruppur) use their parent's polygon and yield history (`tn_districts.PARENT`). Check
+  `data/sat_cache/district_matches.json` after the first GEE run to confirm the polygon matches.
+- **Live yield forecast**: the yield CSV ends in 2019, so lag features for a current-year forecast are several years
+  old (flagged in the UI), and yearly weather features are calendar-year totals as in the original pipeline.
+- Weather for the existing yield model comes from NASA POWER (historical) and Open-Meteo (live).

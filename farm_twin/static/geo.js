@@ -14,6 +14,7 @@
   const TAMIL_NADU = [[80.3,13.55],[80.35,13.1],[80.15,12.4],[79.85,11.75],[79.85,10.9],[79.4,10.3],[79.3,9.7],[78.9,9.25],[78.2,8.9],[77.55,8.08],[77.25,8.5],[77.2,9.2],[77.35,9.8],[77.1,10.3],[76.85,10.9],[76.85,11.45],[77.3,11.9],[77.7,12.2],[77.8,12.8],[78.4,13.2],[79.2,13.4],[79.8,13.65]];
   // every Tamil Nadu district (name + headquarters), supplied by /api/twin-state
   let DISTRICTS = [];
+  let ALERTS = {};                // district id -> {level, satellite_status} from /api/tn/districts (observed twin)
   let farmD = null;               // the district the farm twin lives in
 
   const proj = (lon, lat) => new THREE.Vector3((lon - 80) * 0.92, 0, -(lat - 20));
@@ -179,6 +180,14 @@
       }
       const ring = new THREE.Mesh(new THREE.RingGeometry(0.06, 0.1, 24), new THREE.MeshBasicMaterial({ color: 0xeaf7f9, transparent: true, opacity: 0.9 }));
       ring.rotation.x = -Math.PI / 2; ring.position.set(p.x, 0.45, p.z); stressGroup.add(ring);
+      // alert beacon: only districts whose OBSERVED twin currently has an alert get one (colour = level)
+      const al = ALERTS[d.id];
+      if (al && al.level && al.level !== "none" && al.level !== "unknown") {
+        const bc = { watch: 0xf0b34a, warning: 0xff8a3d, critical: 0xe05a5a }[al.level] || 0xf0b34a;
+        const bm = new THREE.MeshBasicMaterial({ color: bc, transparent: true, opacity: 0.85, depthWrite: false });
+        const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.9, 8), bm);
+        beam.position.set(p.x, 0.9, p.z); stressGroup.add(beam); stressMats.push(bm);
+      }
     });
 
     // farm nodes around the farm district
@@ -220,7 +229,7 @@
       const isF = d === farmD;
       addLabel(d.name.toUpperCase(), proj(d.lon, d.lat).setY(0.45), ["tn"], isF ? "target" : "dim", isF
         ? () => { if (stage === "tn") goDistrict(); }
-        : () => toast("DEMO TWIN IS BOUND TO " + districtName()));
+        : () => { const a = ALERTS[d.id]; toast(a && a.level !== "unknown" ? d.name.toUpperCase() + " · ALERT: " + a.level.toUpperCase() + " · " + String(a.satellite_status).toUpperCase() : "NO OBSERVED DATA YET FOR " + d.name.toUpperCase()); });
     });
     addLabel("FARM-01 · LIVE TWIN", FARM_POS.clone().setY(0.8), ["district"], "target", () => { if (stage === "district") goFarm(); });
     nodesLabels();
@@ -508,6 +517,10 @@
       DATA = await res.json();
     } catch (e) { return; }
     if (!DATA || !DATA.ready) return;      // no farm profile yet: leave the page as it was
+    try {
+      const ar = await (await fetch("/api/tn/districts")).json();
+      ALERTS = {}; (ar.districts || []).forEach(x => { ALERTS[x.district] = x; });
+    } catch (e) { ALERTS = {}; }
     try { mount(); } catch (err) { console.error("Geo intro failed, showing farm directly:", err); if (overlay) overlay.remove(); document.body.style.overflow = ""; }
   }
 

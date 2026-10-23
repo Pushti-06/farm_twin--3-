@@ -6,6 +6,11 @@
 <p class="subtitle">The live simulated state of your farm — continuously updated from real weather data, not a static snapshot.</p>
 <div id="fiware-badge" class="notice good" style="display:none;"></div>
 
+<section class="card">
+  <h2>District Twin — Observed vs Simulated vs Predicted</h2>
+  <div id="observed-panel"></div>
+</section>
+
 <div id="no-data" class="notice warn">
   No farm profile yet. Go to the <a href="{{ url_for('dashboard') }}">Dashboard</a> and get a forecast first —
   the twin's state is built from that.
@@ -107,4 +112,5 @@
 <script src="{{ url_for('static', filename='landscape.js') }}"></script>
 <script src="{{ url_for('static', filename='twin.js') }}"></script>
 <script src="{{ url_for('static', filename='geo.js') }}"></script>
+<script src="{{ url_for('static', filename='observed.js') }}"></script>
 {% endblock %}
