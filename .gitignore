@@ -5,3 +5,7 @@ __pycache__/
 *.zip
 alerts.jsonl
 alerts.jsonl.bak
+
+# user accounts database (never commit)
+data/users.db
+*.db
