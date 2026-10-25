@@ -185,6 +185,11 @@ def notify(rec):
     SMTP_PORT, ALERT_EMAIL_FROM). Failures never affect the twin."""
     if rec["level"] not in ("warning", "critical"):
         return
+    try:  # registered users (users.py); never affects the twin
+        import users
+        users.notify_subscribers(rec)
+    except Exception:
+        pass
     ev = "; ".join(f"{e['indicator']}: {e['value']}" for e in rec["evidence"] if e["points"])
     text = f"[{rec['level'].upper()}] {rec['district']} ({rec.get('crop') or 'all crops'}): {ev}. Verify in the field."
     token, chat = os.environ.get("TELEGRAM_BOT_TOKEN"), os.environ.get("TELEGRAM_CHAT_ID")

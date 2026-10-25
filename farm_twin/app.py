@@ -38,6 +38,7 @@ import twin_observed
 
 app = Flask(__name__)
 import place_ndvi; place_ndvi.register(app)
+import users; users.register(app)
 
 # ---------------------------------------------------------------------------
 # Load real data + trained model once at startup
